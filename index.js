@@ -11,7 +11,7 @@ const fs = require('fs');
 function timeConverter(UNIX_timestamp){
 	var a = new Date(UNIX_timestamp * 1000);
 	var year = a.getFullYear();
-	var month = a.getMonth();
+	var month = a.getMonth()+1;
 	var date = a.getDate();
 	var hour = a.getHours();
 	var min = a.getMinutes();
@@ -20,30 +20,92 @@ function timeConverter(UNIX_timestamp){
 	return time;
   }
 
-(async () => {
+
+let callCounter = 0;
+setInterval(() => {
+    if(callCounter > 0){
+        callCounter -= 1;
+    }
+}, 2000);
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function timeToPriceCad(ticker, time, price){
+    let tickerMap = new Map();
+    tickerMap.set('XXBT', 'XBTCAD');
+    tickerMap.set('ZUSD', 'USDCAD');
+    tickerMap.set('QTUM', 'QTUMUSD'); //have to convert from usd to cad at same date
+    tickerMap.set('XLTC', 'LTCUSD');
+    tickerMap.set('ADA', 'LTCUSD');
+    tickerMap.set('XETH', 'ETHCAD');
+    tickerMap.set('XXDG', 'XDGUSD');
+    tickerMap.set('XXRP', 'XRPCAD');
+
+	let a = new Date(time * 1000);
+    //TODO: make sure that time is based on OHLC data and not one specific trade, because a whale movement could seriously bias the results
+    time = time * 1e9;
+    let newPrice;
+    try {
+        while(callCounter >= 15){
+            await sleep(1000);
+        }
+        let trades = await kraken.api('Trades', {pair:tickerMap.get(ticker), since:time});
+        callCounter += 1;
+        let tradesPrice = trades.result[Object.keys(trades.result)[0]][0][0];
+        let moreTrades;
+        newPrice = price * tradesPrice;
+        //console.log(tradesPrice);
+        if(ticker === 'QTUM' || ticker === 'XLTC' || ticker === 'ADA' || ticker === 'XXDG'){
+            moreTrades = await kraken.api('Trades', {pair:'USDCAD', since:time});
+            callCounter += 1;
+            tradesPrice = moreTrades.result[Object.keys(moreTrades.result)[0]][0][0];
+            newPrice = newPrice/tradesPrice;
+        }
+    } catch (error) {
+        console.log(tickerMap.get(ticker) + ' ' + ticker);
+        throw error;
+    }
+    //console.log(newPrice);
+    return newPrice;
+}
+
+async function getUserLedger() {
 	// Display user's balance
 	try {
 		let offset = 0;
 		let legers;
-		console.log('"txid","refid","time","type","subtype","aclass","asset","amount","fee","balance"');
-		do {
+		//console.log('"txid","refid","time","type","subtype","aclass","asset","amount","fee","balance"');
+ 		do {
 			legers = await kraken.api('Ledgers', {
 				ofs:offset
 			});
 			offset += 50;
+            let previousData = null;
+            let modulo = 0;
 			for(let leger in legers.result.ledger){
 				legerObj = legers.result.ledger[leger];
-				let date = timeConverter(legerObj.time);
+                let date = timeConverter(legerObj.time);
+                if(previousData && legerObj.refid === previousData.refid && previousData.asset !== 'ZCAD' && legerObj.asset !== 'ZCAD'){
+                    let previousPrice = await timeToPriceCad(previousData.asset, previousData.time, previousData.amount);
+                    let currentPrice = await timeToPriceCad(legerObj.asset, legerObj.time, legerObj.amount);
+                    console.log(`"${leger}","${previousData.refid}","${date}","${previousData.type}","${previousData.subtype}","${previousData.aclass}","${previousData.asset}",${previousData.amount},${previousData.fee},${previousData.balance},${previousPrice}`);
+                    console.log(`"${leger}","${legerObj.refid}","${date}","${legerObj.type}","${legerObj.subtype}","${legerObj.aclass}","${legerObj.asset}",${legerObj.amount},${legerObj.fee},${legerObj.balance},${currentPrice}`);
+                }
+                previousData = legerObj;
+
 				let string = `"${leger}","${legerObj.refid}","${date}","${legerObj.type}","${legerObj.subtype}","${legerObj.aclass}","${legerObj.asset}",${legerObj.amount},${legerObj.fee},${legerObj.balance}`;
-				console.log(string);
+				//console.log(string);
 			}
 		} while(Object.keys(legers.result.ledger).length > 0);
+        
 	} catch (error) {
 		console.log(error);
 	}
-})();
+}
 
-async function main() {
+/* async function main() {
     const resultGet = await request.get("https://www.adjustedcostbase.ca/index.cgi");
     console.log(cookieJar.getCookieString("https://www.adjustedcostbase.ca/index.cgi"));
     const result = await request.post("https://www.adjustedcostbase.ca/index.cgi", {
@@ -54,11 +116,6 @@ async function main() {
             password:process.env.PASSWORD
         }
     }, async function(err, response, body){
-        console.log(response.headers);
-/*         let trans = await request.get("https://www.adjustedcostbase.ca/index.cgi", {action:"new_transaction", security:"", jar:cookieJar}, (err, response, body) =>
-        {
-            console.log(body);
-        }) */
         let newTransaction = await request.post("https://www.adjustedcostbase.ca/index.cgi", 
         {
             action:"new_transaction",
@@ -97,6 +154,7 @@ async function main() {
         //console.log(trans);
     });
 }
+ */
 
-
-main();
+//main();
+getUserLedger();
