@@ -114,60 +114,70 @@ async function getUserLedger() {
 		let offset = 0;
 		let legers;
 		//console.log('"txid","refid","time","type","subtype","aclass","asset","amount","fee","balance"');
+        let ledgerArray = [];
  		do {
 			legers = await kraken.api('Ledgers', {
 				ofs:offset
 			});
 			offset += 50;
-            let previousData = null;
-            let modulo = 0;
-			for(let leger in legers.result.ledger){
-				ledgerObj = legers.result.ledger[leger];
-                let date = timeConverter(ledgerObj.time);
-                if(previousData && ledgerObj.refid === previousData.refid){
-                    let feePrice
-                    console.log(`${ledgerObj.fee == 0} ${ledgerObj.fee}`);
-                    if(ledgerObj.fee == 0){
-                        feePrice = await timeToPriceCad(previousData.asset, previousData.time, previousData.fee);
-                    } else {
-                        console.log(ledgerObj.fee);
-                        feePrice = await timeToPriceCad(ledgerObj.asset, ledgerObj.time, ledgerObj.fee);
-                    }
-                    if(ledgerObj.type === 'transfer'){
-                        /* let currentPrice = await timeToPriceCad(ledgerObj.asset, ledgerObj.time, ledgerObj.amount);
-                        if(subtype === 'spottofutures'){
-                            await placeTransaction(previousData.asset, ledgerObj.time, 0, previousData.amount, currentPrice, ledgerObj.redid);
-                        } else if (subtype === 'spotfromfutures'){
+            for(let leger in legers.result.ledger){
+                let ledgerObj = legers.result.ledger[leger];
+                ledgerArray.push([ledgerObj.time, legers.result.ledger[leger]]);
+            }
+		} while(Object.keys(legers.result.ledger).length > 0);
 
-                        } */
-                    }else if (ledgerObj.type === 'deposit') {
-                        let currentPrice = await timeToPriceCad(ledgerObj.asset, ledgerObj.time, ledgerObj.amount);
-                        currentPrice = Math.abs(currentPrice);
-                        await placeTransaction(ledgerObj.asset, ledgerObj.time, 0, ledgerObj.amount, currentPrice, ledgerObj.redid);
-                    } else if (ledgerObj.type === 'withdrawal'){
+        let previousData = null;
+        let ledgerObj;
 
-                    }else {
-                        if(previousData.asset !== 'ZCAD' && ledgerObj.asset !== 'ZCAD'){
-                            let currentPrice = await timeToPriceCad(ledgerObj.asset, ledgerObj.time, ledgerObj.amount);
-                            currentPrice = Math.abs(currentPrice);
-                            await placeTransaction(previousData.asset, ledgerObj.time, feePrice, previousData.amount, currentPrice, ledgerObj.redid);
-                            await placeTransaction(ledgerObj.asset, ledgerObj.time, feePrice, ledgerObj.amount, currentPrice, ledgerObj.redid);
-                        } else if(previousData.asset !== 'ZCAD'){
-                            await placeTransaction(previousData.asset, ledgerObj.time, feePrice, previousData.amount, ledgerObj.amount, ledgerObj.redid);
-                        } else if(ledgerObj.asset !== 'ZCAD'){
-                            await placeTransaction(ledgerObj.asset, ledgerObj.time, feePrice, ledgerObj.amount, previousData.amount, ledgerObj.redid);
-                        }
-                    }
+        ledgerArray.sort((a,b) => {
+            return a[0] - b[0];
+        });
+        //console.log(ledgerArray);
+        for(let leger of ledgerArray){
+            ledgerObj = leger[1];
+            console.log(ledgerObj.type);
+            let date = timeConverter(ledgerObj.time);
+            let feePrice
+            if(ledgerObj.fee == 0 && previousData){
+                feePrice = await timeToPriceCad(previousData.asset, previousData.time, previousData.fee);
+            } else {
+                feePrice = await timeToPriceCad(ledgerObj.asset, ledgerObj.time, ledgerObj.fee);
+            }
+            if(ledgerObj.type === 'transfer'){
+                /* let currentPrice = await timeToPriceCad(ledgerObj.asset, ledgerObj.time, ledgerObj.amount);
+                if(subtype === 'spottofutures'){
+                    await placeTransaction(previousData.asset, ledgerObj.time, 0, previousData.amount, currentPrice, ledgerObj.redid);
+                } else if (subtype === 'spotfromfutures'){
+
+                } */
+            } else if (ledgerObj.type === 'deposit') {
+                console.log('Deposit');
+                let currentPrice = await timeToPriceCad(ledgerObj.asset, ledgerObj.time, ledgerObj.amount);
+                currentPrice = Math.abs(currentPrice);
+                await placeTransaction(ledgerObj.asset, ledgerObj.time, 0, ledgerObj.amount, currentPrice, ledgerObj.redid);
+            } else if (ledgerObj.type === 'withdrawal'){
+
+            }else if (previousData && ledgerObj.refid === previousData.refid){
+                if(previousData.asset !== 'ZCAD' && ledgerObj.asset !== 'ZCAD'){
+                    let currentPrice = await timeToPriceCad(ledgerObj.asset, ledgerObj.time, ledgerObj.amount);
+                    currentPrice = Math.abs(currentPrice);
+                    await placeTransaction(previousData.asset, ledgerObj.time, feePrice, previousData.amount, currentPrice, ledgerObj.redid);
+                    await placeTransaction(ledgerObj.asset, ledgerObj.time, feePrice, ledgerObj.amount, currentPrice, ledgerObj.redid);
+                } else if(previousData.asset !== 'ZCAD'){
+                    await placeTransaction(previousData.asset, ledgerObj.time, feePrice, previousData.amount, ledgerObj.amount, ledgerObj.redid);
+                } else if(ledgerObj.asset !== 'ZCAD'){
+                    await placeTransaction(ledgerObj.asset, ledgerObj.time, feePrice, ledgerObj.amount, previousData.amount, ledgerObj.redid);
+                }
+            }
 
 /*                     console.log(`"${previousData.asset}",${previousData.amount},${feePrice},${currentPrice}`);
-                    console.log(`"${ledgerObj.asset}",${ledgerObj.amount},${feePrice},${currentPrice}`); */
-                }
-                previousData = ledgerObj;
+                console.log(`"${ledgerObj.asset}",${ledgerObj.amount},${feePrice},${currentPrice}`); */
 
-				let string = `"${leger}","${ledgerObj.refid}","${date}","${ledgerObj.type}","${ledgerObj.subtype}","${ledgerObj.aclass}","${ledgerObj.asset}",${ledgerObj.amount},${ledgerObj.fee},${ledgerObj.balance}`;
-				//console.log(string);
-			}
-		} while(Object.keys(legers.result.ledger).length > 0);
+            previousData = ledgerObj;
+
+            let string = `"${leger}","${ledgerObj.refid}","${date}","${ledgerObj.type}","${ledgerObj.subtype}","${ledgerObj.aclass}","${ledgerObj.asset}",${ledgerObj.amount},${ledgerObj.fee},${ledgerObj.balance}`;
+            //console.log(string);
+        }
         clearInterval(countDown);
 	} catch (error) {
 		console.log(error);
@@ -195,7 +205,6 @@ async function placeTransaction(securityType, unixtime, fee, coinAmt, dollarAmt,
     fee = 0;
     let transactionType = (coinAmt < 0 ? 2 : 1); //2 for selling 1 for buying
     coinAmt = Math.abs(coinAmt);
-    console.log(transactionType);
     let newTransaction = await request.post("https://www.adjustedcostbase.ca/index.cgi", 
         {
             action:"new_transaction",
@@ -236,5 +245,6 @@ async function placeTransaction(securityType, unixtime, fee, coinAmt, dollarAmt,
 
 //main();
 getUserLedger();
+//timeToPriceCad('XXBT', 1552745031, 0.03740318);
 
 
